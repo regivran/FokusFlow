@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.fokusflow.ui.theme.FokusFlowTheme
+import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,9 +45,9 @@ class MainActivity : ComponentActivity() {
                     Column(modifier = Modifier.padding(innerPadding)) {
                         // Naše testovací data
                         val testTasks = listOf(
-                            Task(1, "Koupit kávu", "Bez kávy to nepojede", priority = Priority.HIGH),
-                            Task(2, "Cvičit Kotlin", "Aspoň 20 minut", priority = Priority.MEDIUM),
-                            Task(3, "Zalít kytky", "", priority = Priority.LOW)
+                            Task(id = 1, name = "Koupit kávu", description = "Bez kávy to nepojede", priority = Priority.High),
+                            Task(id = 2, name = "Cvičit Kotlin", description = "Aspoň 20 minut", priority = Priority.Medium),
+                            Task(id = 3, name = "Zalít kytky", description = null, priority = Priority.Low)
                         )
 
                         // Zobrazení seznamu
@@ -59,7 +61,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TaskList(tasks: List<Task>) {
-    androidx.compose.foundation.lazy.LazyColumn {
+    LazyColumn {
         items(tasks.size) { index ->
             TaskItem(task = tasks[index], onDelete = { /* zatím nic */ })
         }
@@ -84,12 +86,12 @@ fun TaskItem(task: Task, onDelete: () -> Unit) {
                 modifier = Modifier
                     .size(16.dp)
                     .clip(CircleShape)
-                    .background(Color(task.priority.color))
+                    .background(task.priority.color)
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = task.title, style = MaterialTheme.typography.titleMedium)
-                if (task.description.isNotEmpty()) {
+                Text(text = task.name, style = MaterialTheme.typography.titleMedium)
+                if (!task.description.isNullOrEmpty()) {
                     Text(text = task.description, style = MaterialTheme.typography.bodySmall)
                 }
             }
