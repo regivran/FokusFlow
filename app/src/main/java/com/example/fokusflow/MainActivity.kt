@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -32,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.fokusflow.ui.theme.FokusFlowTheme
 import java.time.LocalDate
 
@@ -41,17 +43,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             FokusFlowTheme { // Použije barvy vašeho projektu
+                // 1. Získáme instanci našeho ViewModelu
+                val viewModel: TaskViewModel = viewModel()
+
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
-                        // Naše testovací data
-                        val testTasks = listOf(
-                            Task(id = 1, name = "Koupit kávu", description = "Bez kávy to nepojede", priority = Priority.High),
-                            Task(id = 2, name = "Cvičit Kotlin", description = "Aspoň 20 minut", priority = Priority.Medium),
-                            Task(id = 3, name = "Zalít kytky", description = null, priority = Priority.Low)
+                        // 2. Předáme seznam úkolů z ViewModelu do našeho UI
+                        // Předáme také funkci pro smazání
+                        TaskList(
+                            tasks = viewModel.tasks,
+                            onDelete = { task -> viewModel.deleteTask(task) }
                         )
-
-                        // Zobrazení seznamu
-                        TaskList(tasks = testTasks)
                     }
                 }
             }
@@ -60,10 +62,14 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun TaskList(tasks: List<Task>) {
+fun TaskList(tasks: List<Task>, onDelete: (Task) -> Unit) {
     LazyColumn {
-        items(tasks.size) { index ->
-            TaskItem(task = tasks[index], onDelete = { /* zatím nic */ })
+        // Použití `key` pomáhá Compose optimalizovat seznam, hlavně při změnách.
+        items(
+            items = tasks,
+            key = { task -> task.id }
+        ) { task ->
+            TaskItem(task = task, onDelete = { onDelete(task) })
         }
     }
 }
