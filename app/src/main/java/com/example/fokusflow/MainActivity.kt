@@ -23,9 +23,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,8 +49,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -65,8 +69,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             FokusFlowTheme {
                 val viewModel: TaskViewModel = viewModel()
+                
                 var taskToDelete by remember { mutableStateOf<Task?>(null) }
                 var showAddTaskDialog by remember { mutableStateOf(false) }
+                var taskToEdit by remember { mutableStateOf<Task?>(null) }
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -88,9 +94,12 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.headlineSmall,
                                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
                             )
+                            // Přímý přístup k viewModel.freeTasks zajistí, že Compose uvidí změny
                             TaskList(
                                 tasks = viewModel.freeTasks,
-                                onDelete = { task -> taskToDelete = task }
+                                onDelete = { task -> taskToDelete = task },
+                                onEdit = { task -> taskToEdit = task },
+                                onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
                             )
                         }
 
@@ -103,12 +112,14 @@ class MainActivity : ComponentActivity() {
                             )
                             TaskList(
                                 tasks = viewModel.deadlineTasks,
-                                onDelete = { task -> taskToDelete = task }
+                                onDelete = { task -> taskToDelete = task },
+                                onEdit = { task -> taskToEdit = task },
+                                onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
                             )
                         }
                     }
 
-                    // Dialog pro smazání úkolu
+                    // Dialogy
                     if (taskToDelete != null) {
                         DeleteConfirmationDialog(
                             task = taskToDelete!!,
@@ -120,14 +131,22 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // Dialog pro přidání úkolu
-                    if (showAddTaskDialog) {
-                        AddTaskDialog(
+                    if (showAddTaskDialog || taskToEdit != null) {
+                        TaskDialog(
+                            task = taskToEdit,
                             onConfirm = { name, description, priority, dueDate ->
-                                viewModel.addTask(name, description, priority, dueDate)
-                                showAddTaskDialog = false
+                                if (taskToEdit != null) {
+                                    viewModel.updateTask(taskToEdit!!.id, name, description, priority, dueDate)
+                                    taskToEdit = null
+                                } else {
+                                    viewModel.addTask(name, description, priority, dueDate)
+                                    showAddTaskDialog = false
+                                }
                             },
-                            onDismiss = { showAddTaskDialog = false }
+                            onDismiss = {
+                                showAddTaskDialog = false
+                                taskToEdit = null
+                            }
                         )
                     }
                 }
@@ -157,16 +176,22 @@ fun DeleteConfirmationDialog(task: Task, onConfirm: (Task) -> Unit, onDismiss: (
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddTaskDialog(onConfirm: (String, String, Priority, LocalDate?) -> Unit, onDismiss: () -> Unit) {
-    var taskName by remember { mutableStateOf("") }
-    var taskDescription by remember { mutableStateOf("") }
-    var selectedPriority by remember { mutableStateOf(Priority.Medium) }
-    var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
+fun TaskDialog(
+    task: Task? = null,
+    onConfirm: (String, String, Priority, LocalDate?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var taskName by remember { mutableStateOf(task?.name ?: "") }
+    var taskDescription by remember { mutableStateOf(task?.description ?: "") }
+    var selectedPriority by remember { mutableStateOf(task?.priority ?: Priority.Medium) }
+    var selectedDate by remember { mutableStateOf<LocalDate?>(task?.dueDate) }
     var showDatePicker by remember { mutableStateOf(false) }
     val isNameValid = taskName.isNotBlank()
 
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState()
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDate?.atStartOfDay(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+        )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
@@ -193,7 +218,7 @@ fun AddTaskDialog(onConfirm: (String, String, Priority, LocalDate?) -> Unit, onD
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Přidat nový úkol") },
+        title = { Text(if (task == null) "Přidat nový úkol" else "Upravit úkol") },
         text = {
             Column {
                 TextField(
@@ -201,13 +226,15 @@ fun AddTaskDialog(onConfirm: (String, String, Priority, LocalDate?) -> Unit, onD
                     onValueChange = { taskName = it },
                     label = { Text("Název úkolu") },
                     isError = !isNameValid,
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 TextField(
                     value = taskDescription,
                     onValueChange = { taskDescription = it },
-                    label = { Text("Popis (volitelné)") }
+                    label = { Text("Popis (volitelné)") },
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.size(16.dp))
                 Text("Priorita:", style = MaterialTheme.typography.labelMedium)
@@ -215,7 +242,7 @@ fun AddTaskDialog(onConfirm: (String, String, Priority, LocalDate?) -> Unit, onD
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Priority.values().forEach { priority ->
+                    Priority.entries.forEach { priority ->
                         FilterChip(
                             selected = (priority == selectedPriority),
                             onClick = { selectedPriority = priority },
@@ -244,7 +271,7 @@ fun AddTaskDialog(onConfirm: (String, String, Priority, LocalDate?) -> Unit, onD
                 onClick = { onConfirm(taskName, taskDescription, selectedPriority, selectedDate) },
                 enabled = isNameValid
             ) {
-                Text("Přidat")
+                Text(if (task == null) "Přidat" else "Uložit")
             }
         },
         dismissButton = {
@@ -256,26 +283,34 @@ fun AddTaskDialog(onConfirm: (String, String, Priority, LocalDate?) -> Unit, onD
 }
 
 @Composable
-fun TaskList(tasks: List<Task>, onDelete: (Task) -> Unit) {
+fun TaskList(tasks: List<Task>, onDelete: (Task) -> Unit, onEdit: (Task) -> Unit, onToggleCompletion: (Task) -> Unit) {
     LazyColumn(
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
-        // Použití `key` pomáhá Compose optimalizovat seznam, hlavně při změnách.
         items(
             items = tasks,
             key = { task -> task.id }
         ) { task ->
-            TaskItem(task = task, onDelete = { onDelete(task) })
+            TaskItem(
+                task = task,
+                onDelete = { onDelete(task) },
+                onEdit = { onEdit(task) },
+                onToggleCompletion = { onToggleCompletion(task) }
+            )
         }
     }
 }
 
 @Composable
-fun TaskItem(task: Task, onDelete: () -> Unit) {
+fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompletion: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(8.dp)
+            .alpha(if (task.isCompleted) 0.6f else 1f),
+        colors = CardDefaults.cardColors(
+            containerColor = task.priority.color.copy(alpha = 0.2f)
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Row(
@@ -284,21 +319,32 @@ fun TaskItem(task: Task, onDelete: () -> Unit) {
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(16.dp)
-                    .clip(CircleShape)
-                    .background(task.priority.color)
+            Checkbox(
+                checked = task.isCompleted,
+                onCheckedChange = { onToggleCompletion() }
             )
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = task.name, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = task.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                )
                 if (!task.description.isNullOrEmpty()) {
-                    Text(text = task.description, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = task.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                    )
                 }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Smazat", tint = Color.Gray)
+            Column {
+                IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Edit, contentDescription = "Upravit", tint = Color.DarkGray)
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Smazat", tint = Color.DarkGray)
+                }
             }
         }
     }
