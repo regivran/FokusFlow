@@ -60,9 +60,14 @@ import com.example.fokusflow.ui.theme.FokusFlowTheme
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
+
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.runtime.mutableIntStateOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -76,9 +81,11 @@ class MainActivity : ComponentActivity() {
                 val dao = remember { database.taskDao() }
                 val viewModel: TaskViewModel = viewModel(factory = TaskViewModelFactory(dao))
                 
-                // Převod StateFlow na Compose State
                 val freeTasks by viewModel.freeTasks.collectAsState()
                 val deadlineTasks by viewModel.deadlineTasks.collectAsState()
+
+                var selectedTabIndex by remember { mutableIntStateOf(0) }
+                val titles = listOf("Volné", "S termínem")
 
                 var taskToDelete by remember { mutableStateOf<Task?>(null) }
                 var showAddTaskDialog by remember { mutableStateOf(false) }
@@ -92,34 +99,29 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) { innerPadding ->
-                    Row(
+                    Column(
                         modifier = Modifier
                             .padding(innerPadding)
                             .fillMaxSize()
                     ) {
-                        // Levý sloupec pro volné úkoly
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Volné úkoly",
-                                style = MaterialTheme.typography.headlineSmall,
-                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
-                            )
-                            TaskList(
+                        TabRow(selectedTabIndex = selectedTabIndex) {
+                            titles.forEachIndexed { index, title ->
+                                Tab(
+                                    selected = selectedTabIndex == index,
+                                    onClick = { selectedTabIndex = index },
+                                    text = { Text(text = title) }
+                                )
+                            }
+                        }
+
+                        when (selectedTabIndex) {
+                            0 -> TaskList(
                                 tasks = freeTasks,
                                 onDelete = { task -> taskToDelete = task },
                                 onEdit = { task -> taskToEdit = task },
                                 onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
                             )
-                        }
-
-                        // Pravý sloupec pro úkoly s termínem
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Úkoly s termínem",
-                                style = MaterialTheme.typography.headlineSmall,
-                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
-                            )
-                            TaskList(
+                            1 -> TaskList(
                                 tasks = deadlineTasks,
                                 onDelete = { task -> taskToDelete = task },
                                 onEdit = { task -> taskToEdit = task },
@@ -312,6 +314,8 @@ fun TaskList(tasks: List<Task>, onDelete: (Task) -> Unit, onEdit: (Task) -> Unit
 
 @Composable
 fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompletion: () -> Unit) {
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("d. M. yyyy") }
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -345,6 +349,26 @@ fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompl
                         style = MaterialTheme.typography.bodySmall,
                         textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
                     )
+                }
+                // Zobrazení data, pokud existuje
+                if (task.dueDate != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DateRange,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = task.dueDate.format(dateFormatter),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray
+                        )
+                    }
                 }
             }
             Column {
