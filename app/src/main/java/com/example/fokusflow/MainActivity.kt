@@ -61,6 +61,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,8 +71,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             FokusFlowTheme {
-                val viewModel: TaskViewModel = viewModel()
+                val context = LocalContext.current
+                val database = remember { TaskDatabase.getDatabase(context) }
+                val dao = remember { database.taskDao() }
+                val viewModel: TaskViewModel = viewModel(factory = TaskViewModelFactory(dao))
                 
+                // Převod StateFlow na Compose State
+                val freeTasks by viewModel.freeTasks.collectAsState()
+                val deadlineTasks by viewModel.deadlineTasks.collectAsState()
+
                 var taskToDelete by remember { mutableStateOf<Task?>(null) }
                 var showAddTaskDialog by remember { mutableStateOf(false) }
                 var taskToEdit by remember { mutableStateOf<Task?>(null) }
@@ -94,9 +104,8 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.headlineSmall,
                                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
                             )
-                            // Přímý přístup k viewModel.freeTasks zajistí, že Compose uvidí změny
                             TaskList(
-                                tasks = viewModel.freeTasks,
+                                tasks = freeTasks,
                                 onDelete = { task -> taskToDelete = task },
                                 onEdit = { task -> taskToEdit = task },
                                 onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
@@ -111,7 +120,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
                             )
                             TaskList(
-                                tasks = viewModel.deadlineTasks,
+                                tasks = deadlineTasks,
                                 onDelete = { task -> taskToDelete = task },
                                 onEdit = { task -> taskToEdit = task },
                                 onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
