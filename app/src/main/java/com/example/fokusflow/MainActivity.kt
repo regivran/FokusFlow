@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +56,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -315,12 +319,15 @@ fun TaskList(tasks: List<Task>, onDelete: (Task) -> Unit, onEdit: (Task) -> Unit
 @Composable
 fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompletion: () -> Unit) {
     val dateFormatter = remember { DateTimeFormatter.ofPattern("d. M. yyyy") }
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
     
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
-            .alpha(if (task.isCompleted) 0.6f else 1f),
+            .alpha(if (task.isCompleted) 0.6f else 1f)
+            .clickable { isExpanded = !isExpanded }
+            .animateContentSize(),
         colors = CardDefaults.cardColors(
             containerColor = task.priority.color.copy(alpha = 0.2f)
         ),
@@ -347,7 +354,9 @@ fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompl
                     Text(
                         text = task.description,
                         style = MaterialTheme.typography.bodySmall,
-                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                        maxLines = if (isExpanded) Int.MAX_VALUE else 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 // Zobrazení data, pokud existuje
