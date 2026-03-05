@@ -11,26 +11,44 @@ import java.time.LocalDate
 
 class TaskViewModel(private val taskDao: TaskDao) : ViewModel() {
 
-    // Všechny úkoly z databáze jako StateFlow
-    val allTasks: StateFlow<List<Task>> = taskDao.getAllTasks()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    init {
+        purgeOldTasks()
+    }
 
-    // Odvozené seznamy pro UI
-    val deadlineTasks: StateFlow<List<Task>> = allTasks.map { tasks ->
-        tasks.filter { it.dueDate != null }.sortedBy { it.dueDate }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val freeTasks: StateFlow<List<Task>> = taskDao.getFreeTasks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val freeTasks: StateFlow<List<Task>> = allTasks.map { tasks ->
-        tasks.filter { it.dueDate == null }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val deadlineTasks: StateFlow<List<Task>> = taskDao.getDeadlineTasks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun deleteTask(task: Task) {
+    val completedTasks: StateFlow<List<Task>> = taskDao.getCompletedTasks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val deletedTasks: StateFlow<List<Task>> = taskDao.getDeletedTasks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun moveToTrash(task: Task) {
+        viewModelScope.launch {
+            taskDao.updateTask(task.copy(isDeleted = true, deletedAt = LocalDate.now()))
+        }
+    }
+
+    fun restoreTask(task: Task) {
+        viewModelScope.launch {
+            taskDao.updateTask(task.copy(isDeleted = false, deletedAt = null))
+        }
+    }
+
+    fun deletePermanently(task: Task) {
         viewModelScope.launch {
             taskDao.deleteTask(task)
+        }
+    }
+
+    private fun purgeOldTasks() {
+        viewModelScope.launch {
+            val threshold = LocalDate.now().minusDays(30)
+            taskDao.purgeOldDeletedTasks(threshold)
         }
     }
 
@@ -46,14 +64,17 @@ class TaskViewModel(private val taskDao: TaskDao) : ViewModel() {
         }
     }
 
-    fun updateTask(id: Int, name: String, description: String?, priority: Priority, dueDate: LocalDate?) {
+    fun updateTask(id: Int, name: String, description: String?, priority: Priority, dueDate: LocalDate?, isCompleted: Boolean, isDeleted: Boolean, deletedAt: LocalDate?) {
         viewModelScope.launch {
             val updatedTask = Task(
                 id = id,
                 name = name,
                 description = description?.takeIf { it.isNotBlank() },
                 priority = priority,
-                dueDate = dueDate
+                dueDate = dueDate,
+                isCompleted = isCompleted,
+                isDeleted = isDeleted,
+                deletedAt = deletedAt
             )
             taskDao.updateTask(updatedTask)
         }

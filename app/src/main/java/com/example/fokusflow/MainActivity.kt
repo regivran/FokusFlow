@@ -28,6 +28,19 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
@@ -87,82 +100,168 @@ class MainActivity : ComponentActivity() {
                 
                 val freeTasks by viewModel.freeTasks.collectAsState()
                 val deadlineTasks by viewModel.deadlineTasks.collectAsState()
+                val completedTasks by viewModel.completedTasks.collectAsState()
+                val deletedTasks by viewModel.deletedTasks.collectAsState()
 
-                var selectedTabIndex by remember { mutableIntStateOf(0) }
+                var currentView by rememberSaveable { mutableStateOf("home") }
+                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                val scope = rememberCoroutineScope()
+
+                var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
                 val titles = listOf("Volné", "S termínem")
 
                 var taskToDelete by remember { mutableStateOf<Task?>(null) }
                 var showAddTaskDialog by remember { mutableStateOf(false) }
                 var taskToEdit by remember { mutableStateOf<Task?>(null) }
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    floatingActionButton = {
-                        FloatingActionButton(onClick = { showAddTaskDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Přidat úkol")
-                        }
-                    }
-                ) { innerPadding ->
-                    Column(
-                        modifier = Modifier
-                            .padding(innerPadding)
-                            .fillMaxSize()
-                    ) {
-                        TabRow(selectedTabIndex = selectedTabIndex) {
-                            titles.forEachIndexed { index, title ->
-                                Tab(
-                                    selected = selectedTabIndex == index,
-                                    onClick = { selectedTabIndex = index },
-                                    text = { Text(text = title) }
-                                )
-                            }
-                        }
-
-                        when (selectedTabIndex) {
-                            0 -> TaskList(
-                                tasks = freeTasks,
-                                onDelete = { task -> taskToDelete = task },
-                                onEdit = { task -> taskToEdit = task },
-                                onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
-                            )
-                            1 -> TaskList(
-                                tasks = deadlineTasks,
-                                onDelete = { task -> taskToDelete = task },
-                                onEdit = { task -> taskToEdit = task },
-                                onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
-                            )
-                        }
-                    }
-
-                    // Dialogy
-                    if (taskToDelete != null) {
-                        DeleteConfirmationDialog(
-                            task = taskToDelete!!,
-                            onConfirm = {
-                                viewModel.deleteTask(it)
-                                taskToDelete = null
-                            },
-                            onDismiss = { taskToDelete = null }
-                        )
-                    }
-
-                    if (showAddTaskDialog || taskToEdit != null) {
-                        TaskDialog(
-                            task = taskToEdit,
-                            onConfirm = { name, description, priority, dueDate ->
-                                if (taskToEdit != null) {
-                                    viewModel.updateTask(taskToEdit!!.id, name, description, priority, dueDate)
-                                    taskToEdit = null
-                                } else {
-                                    viewModel.addTask(name, description, priority, dueDate)
-                                    showAddTaskDialog = false
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        ModalDrawerSheet {
+                            Text("FokusFlow", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.headlineMedium)
+                            HorizontalDivider()
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                                label = { Text("Domů") },
+                                selected = currentView == "home",
+                                onClick = {
+                                    currentView = "home"
+                                    scope.launch { drawerState.close() }
                                 }
-                            },
-                            onDismiss = {
-                                showAddTaskDialog = false
-                                taskToEdit = null
+                            )
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Default.CheckCircle, contentDescription = null) },
+                                label = { Text("Hotové") },
+                                selected = currentView == "completed",
+                                onClick = {
+                                    currentView = "completed"
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                                label = { Text("Koš") },
+                                selected = currentView == "trash",
+                                onClick = {
+                                    currentView = "trash"
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                        }
+                    }
+                ) {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        topBar = {
+                            TopAppBar(
+                                title = { 
+                                    Text(when(currentView) {
+                                        "home" -> "Moje úkoly"
+                                        "completed" -> "Hotové úkoly"
+                                        "trash" -> "Koš"
+                                        else -> "FokusFlow"
+                                    })
+                                },
+                                navigationIcon = {
+                                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                        Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                    }
+                                }
+                            )
+                        },
+                        floatingActionButton = {
+                            if (currentView == "home") {
+                                FloatingActionButton(onClick = { showAddTaskDialog = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = "Přidat úkol")
+                                }
                             }
-                        )
+                        }
+                    ) { innerPadding ->
+                        Column(
+                            modifier = Modifier
+                                .padding(innerPadding)
+                                .fillMaxSize()
+                        ) {
+                            when (currentView) {
+                                "home" -> {
+                                    TabRow(selectedTabIndex = selectedTabIndex) {
+                                        titles.forEachIndexed { index, title ->
+                                            Tab(
+                                                selected = selectedTabIndex == index,
+                                                onClick = { selectedTabIndex = index },
+                                                text = { Text(text = title) }
+                                            )
+                                        }
+                                    }
+
+                                    when (selectedTabIndex) {
+                                        0 -> TaskList(
+                                            tasks = freeTasks,
+                                            onDelete = { task -> viewModel.moveToTrash(task) },
+                                            onEdit = { task -> taskToEdit = task },
+                                            onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
+                                        )
+                                        1 -> TaskList(
+                                            tasks = deadlineTasks,
+                                            onDelete = { task -> viewModel.moveToTrash(task) },
+                                            onEdit = { task -> taskToEdit = task },
+                                            onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
+                                        )
+                                    }
+                                }
+                                "completed" -> {
+                                    TaskList(
+                                        tasks = completedTasks,
+                                        onDelete = { task -> viewModel.moveToTrash(task) },
+                                        onEdit = { task -> taskToEdit = task },
+                                        onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) }
+                                    )
+                                }
+                                "trash" -> {
+                                    TaskList(
+                                        tasks = deletedTasks,
+                                        onDelete = { task -> taskToDelete = task },
+                                        onEdit = { task -> viewModel.restoreTask(task) }, // V koši Edit = Obnovit
+                                        onToggleCompletion = { /* V koši nejde odškrtnout */ },
+                                        isTrash = true
+                                    )
+                                }
+                            }
+                        }
+
+                        // Dialogy
+                        if (taskToDelete != null) {
+                            DeleteConfirmationDialog(
+                                task = taskToDelete!!,
+                                onConfirm = {
+                                    viewModel.deletePermanently(it)
+                                    taskToDelete = null
+                                },
+                                onDismiss = { taskToDelete = null }
+                            )
+                        }
+
+                        if (showAddTaskDialog || taskToEdit != null) {
+                            TaskDialog(
+                                task = taskToEdit,
+                                onConfirm = { name, description, priority, dueDate ->
+                                    if (taskToEdit != null) {
+                                        viewModel.updateTask(
+                                            taskToEdit!!.id, name, description, priority, dueDate,
+                                            taskToEdit!!.isCompleted, taskToEdit!!.isDeleted, taskToEdit!!.deletedAt
+                                        )
+                                        taskToEdit = null
+                                    } else {
+                                        viewModel.addTask(name, description, priority, dueDate)
+                                        showAddTaskDialog = false
+                                    }
+                                },
+                                onDismiss = {
+                                    showAddTaskDialog = false
+                                    taskToEdit = null
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -298,7 +397,13 @@ fun TaskDialog(
 }
 
 @Composable
-fun TaskList(tasks: List<Task>, onDelete: (Task) -> Unit, onEdit: (Task) -> Unit, onToggleCompletion: (Task) -> Unit) {
+fun TaskList(
+    tasks: List<Task>,
+    onDelete: (Task) -> Unit,
+    onEdit: (Task) -> Unit,
+    onToggleCompletion: (Task) -> Unit,
+    isTrash: Boolean = false
+) {
     LazyColumn(
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
@@ -310,14 +415,21 @@ fun TaskList(tasks: List<Task>, onDelete: (Task) -> Unit, onEdit: (Task) -> Unit
                 task = task,
                 onDelete = { onDelete(task) },
                 onEdit = { onEdit(task) },
-                onToggleCompletion = { onToggleCompletion(task) }
+                onToggleCompletion = { onToggleCompletion(task) },
+                isTrash = isTrash
             )
         }
     }
 }
 
 @Composable
-fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompletion: () -> Unit) {
+fun TaskItem(
+    task: Task,
+    onDelete: () -> Unit,
+    onEdit: () -> Unit,
+    onToggleCompletion: () -> Unit,
+    isTrash: Boolean = false
+) {
     val dateFormatter = remember { DateTimeFormatter.ofPattern("d. M. yyyy") }
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     
@@ -325,7 +437,7 @@ fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompl
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
-            .alpha(if (task.isCompleted) 0.6f else 1f)
+            .alpha(if (task.isCompleted && !isTrash) 0.6f else 1f)
             .clickable { isExpanded = !isExpanded }
             .animateContentSize(),
         colors = CardDefaults.cardColors(
@@ -339,22 +451,24 @@ fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompl
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(
-                checked = task.isCompleted,
-                onCheckedChange = { onToggleCompletion() }
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+            if (!isTrash) {
+                Checkbox(
+                    checked = task.isCompleted,
+                    onCheckedChange = { onToggleCompletion() }
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.name,
                     style = MaterialTheme.typography.titleMedium,
-                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                    textDecoration = if (task.isCompleted && !isTrash) TextDecoration.LineThrough else TextDecoration.None
                 )
                 if (!task.description.isNullOrEmpty()) {
                     Text(
                         text = task.description,
                         style = MaterialTheme.typography.bodySmall,
-                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                        textDecoration = if (task.isCompleted && !isTrash) TextDecoration.LineThrough else TextDecoration.None,
                         maxLines = if (isExpanded) Int.MAX_VALUE else 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -379,10 +493,22 @@ fun TaskItem(task: Task, onDelete: () -> Unit, onEdit: () -> Unit, onToggleCompl
                         )
                     }
                 }
+                if (isTrash && task.deletedAt != null) {
+                    Text(
+                        text = "Smazáno: ${task.deletedAt.format(dateFormatter)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Red.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
             Column {
                 IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Edit, contentDescription = "Upravit", tint = Color.DarkGray)
+                    Icon(
+                        if (isTrash) Icons.Default.Refresh else Icons.Default.Edit,
+                        contentDescription = if (isTrash) "Obnovit" else "Upravit",
+                        tint = Color.DarkGray
+                    )
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = "Smazat", tint = Color.DarkGray)
