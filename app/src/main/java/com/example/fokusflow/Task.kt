@@ -15,7 +15,9 @@ data class Task(
     val priority: Priority = Priority.Medium,
     val isCompleted: Boolean = false,
     val isDeleted: Boolean = false,
-    val deletedAt: LocalDate? = null
+    val deletedAt: LocalDate? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 enum class Priority(val color: Color) {

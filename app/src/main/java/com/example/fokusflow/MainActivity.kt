@@ -30,6 +30,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.DrawerValue
@@ -42,6 +43,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -85,6 +87,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.runtime.mutableIntStateOf
+
+// Importy pro Mapy
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -139,6 +149,15 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
+                                icon = { Icon(Icons.Default.LocationOn, contentDescription = null) },
+                                label = { Text("Mapa") },
+                                selected = currentView == "map",
+                                onClick = {
+                                    currentView = "map"
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
                                 icon = { Icon(Icons.Default.Delete, contentDescription = null) },
                                 label = { Text("Koš") },
                                 selected = currentView == "trash",
@@ -159,6 +178,7 @@ class MainActivity : ComponentActivity() {
                                         "home" -> "Moje úkoly"
                                         "completed" -> "Hotové úkoly"
                                         "trash" -> "Koš"
+                                        "map" -> "Mapa úkolů"
                                         else -> "FokusFlow"
                                     })
                                 },
@@ -226,6 +246,12 @@ class MainActivity : ComponentActivity() {
                                         isTrash = true
                                     )
                                 }
+                                "map" -> {
+                                    TasksMapView(
+                                        tasks = freeTasks + deadlineTasks,
+                                        onTaskClick = { task -> taskToEdit = task }
+                                    )
+                                }
                             }
                         }
 
@@ -244,15 +270,16 @@ class MainActivity : ComponentActivity() {
                         if (showAddTaskDialog || taskToEdit != null) {
                             TaskDialog(
                                 task = taskToEdit,
-                                onConfirm = { name, description, priority, dueDate ->
+                                onConfirm = { name, description, priority, dueDate, latitude, longitude ->
                                     if (taskToEdit != null) {
                                         viewModel.updateTask(
                                             taskToEdit!!.id, name, description, priority, dueDate,
-                                            taskToEdit!!.isCompleted, taskToEdit!!.isDeleted, taskToEdit!!.deletedAt
+                                            taskToEdit!!.isCompleted, taskToEdit!!.isDeleted, taskToEdit!!.deletedAt,
+                                            latitude, longitude
                                         )
                                         taskToEdit = null
                                     } else {
-                                        viewModel.addTask(name, description, priority, dueDate)
+                                        viewModel.addTask(name, description, priority, dueDate, latitude, longitude)
                                         showAddTaskDialog = false
                                     }
                                 },
@@ -292,14 +319,18 @@ fun DeleteConfirmationDialog(task: Task, onConfirm: (Task) -> Unit, onDismiss: (
 @Composable
 fun TaskDialog(
     task: Task? = null,
-    onConfirm: (String, String, Priority, LocalDate?) -> Unit,
+    onConfirm: (String, String, Priority, LocalDate?, Double?, Double?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var taskName by remember { mutableStateOf(task?.name ?: "") }
     var taskDescription by remember { mutableStateOf(task?.description ?: "") }
     var selectedPriority by remember { mutableStateOf(task?.priority ?: Priority.Medium) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(task?.dueDate) }
+    var latitude by remember { mutableStateOf(task?.latitude) }
+    var longitude by remember { mutableStateOf(task?.longitude) }
+    
     var showDatePicker by remember { mutableStateOf(false) }
+    var showLocationPicker by remember { mutableStateOf(false) }
     val isNameValid = taskName.isNotBlank()
 
     if (showDatePicker) {
@@ -328,6 +359,18 @@ fun TaskDialog(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    if (showLocationPicker) {
+        LocationPickerDialog(
+            initialLocation = if (latitude != null && longitude != null) LatLng(latitude!!, longitude!!) else null,
+            onLocationSelected = { latLng ->
+                latitude = latLng.latitude
+                longitude = latLng.longitude
+                showLocationPicker = false
+            },
+            onDismiss = { showLocationPicker = false }
+        )
     }
 
     AlertDialog(
@@ -378,11 +421,28 @@ fun TaskDialog(
                         Icon(Icons.Default.DateRange, contentDescription = "Vybrat termín")
                     }
                 }
+                Spacer(modifier = Modifier.size(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Poloha: ", style = MaterialTheme.typography.labelMedium)
+                    Text(if (latitude != null) "Nastavena" else "Žádná")
+                    Spacer(modifier = Modifier.weight(1f))
+                    if(latitude != null){
+                        IconButton(onClick = { 
+                            latitude = null
+                            longitude = null
+                        }) {
+                           Icon(Icons.Default.Delete, contentDescription = "Smazat polohu")
+                        }
+                    }
+                    IconButton(onClick = { showLocationPicker = true }) {
+                        Icon(Icons.Default.LocationOn, contentDescription = "Vybrat polohu")
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(taskName, taskDescription, selectedPriority, selectedDate) },
+                onClick = { onConfirm(taskName, taskDescription, selectedPriority, selectedDate, latitude, longitude) },
                 enabled = isNameValid
             ) {
                 Text(if (task == null) "Přidat" else "Uložit")
@@ -493,6 +553,26 @@ fun TaskItem(
                         )
                     }
                 }
+                // Zobrazení polohy, pokud existuje
+                if (task.latitude != null && task.longitude != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Poloha nastavena",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray
+                        )
+                    }
+                }
                 if (isTrash && task.deletedAt != null) {
                     Text(
                         text = "Smazáno: ${task.deletedAt.format(dateFormatter)}",
@@ -514,6 +594,73 @@ fun TaskItem(
                     Icon(Icons.Default.Delete, contentDescription = "Smazat", tint = Color.DarkGray)
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun LocationPickerDialog(
+    initialLocation: LatLng?,
+    onLocationSelected: (LatLng) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedLatLng by remember { mutableStateOf(initialLocation ?: LatLng(50.0755, 14.4378)) } // Default Praha
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(selectedLatLng, 10f)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onLocationSelected(selectedLatLng) }) {
+                Text("Vybrat")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Zrušit")
+            }
+        },
+        title = { Text("Vyberte místo úkolu") },
+        text = {
+            Box(modifier = Modifier.size(300.dp)) {
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = cameraPositionState,
+                    onMapClick = { latLng ->
+                        selectedLatLng = latLng
+                    }
+                ) {
+                    Marker(
+                        state = MarkerState(position = selectedLatLng),
+                        title = "Vybrané místo"
+                    )
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun TasksMapView(
+    tasks: List<Task>,
+    onTaskClick: (Task) -> Unit
+) {
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(50.0755, 14.4378), 7f)
+    }
+
+    GoogleMap(
+        modifier = Modifier.fillMaxSize(),
+        cameraPositionState = cameraPositionState
+    ) {
+        tasks.filter { it.latitude != null && it.longitude != null }.forEach { task ->
+            Marker(
+                state = MarkerState(position = LatLng(task.latitude!!, task.longitude!!)),
+                title = task.name,
+                snippet = task.description,
+                onInfoWindowClick = { onTaskClick(task) }
+            )
         }
     }
 }
