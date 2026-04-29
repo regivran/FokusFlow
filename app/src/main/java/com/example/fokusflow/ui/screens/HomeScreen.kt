@@ -6,6 +6,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.example.fokusflow.Task
 import com.example.fokusflow.TaskViewModel
 import com.example.fokusflow.ui.components.TaskList

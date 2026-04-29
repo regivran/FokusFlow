@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.example.fokusflow.Priority
 import com.example.fokusflow.Task
 import com.google.android.gms.location.LocationServices
@@ -116,10 +118,22 @@ fun TaskItem(
                     }
                 }
                 if (!task.locationName.isNullOrEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically, 
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.LocationOn, 
+                            contentDescription = "Poloha", 
+                            modifier = Modifier.size(16.dp), 
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(task.locationName, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text(
+                            text = task.locationName, 
+                            style = MaterialTheme.typography.labelMedium, 
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
                 if (isTrash && task.deletedAt != null) {
@@ -166,7 +180,61 @@ fun TaskDialog(
     var locationName by remember { mutableStateOf(task?.locationName) }
     
     var showDatePicker by remember { mutableStateOf(false) }
+    var isFetchingLocation by remember { mutableStateOf(false) }
     val isNameValid = taskName.isNotBlank()
+
+    val fetchLocation = {
+        isFetchingLocation = true
+        locationName = "Zjišťuji polohu..."
+        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+        
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            
+            // Zkusíme nejdřív poslední známou polohu (je to nejrychlejší)
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    processLocation(location, context) { lat, lon, name ->
+                        latitude = lat
+                        longitude = lon
+                        locationName = name
+                        isFetchingLocation = false
+                    }
+                } else {
+                    // Pokud lastLocation selže, vyžádáme si čerstvou polohu
+                    val priority = com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY
+                    fusedLocationClient.getCurrentLocation(priority, null).addOnSuccessListener { freshLocation ->
+                        if (freshLocation != null) {
+                            processLocation(freshLocation, context) { lat, lon, name ->
+                                latitude = lat
+                                longitude = lon
+                                locationName = name
+                                isFetchingLocation = false
+                            }
+                        } else {
+                            locationName = "Poloha nenalezena"
+                            isFetchingLocation = false
+                        }
+                    }.addOnFailureListener {
+                        locationName = "Chyba zjišťování"
+                        isFetchingLocation = false
+                    }
+                }
+            }
+        } else {
+            isFetchingLocation = false
+            locationName = "Chybí oprávnění"
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+            fetchLocation()
+        }
+    }
 
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
@@ -214,35 +282,52 @@ fun TaskDialog(
                 Spacer(modifier = Modifier.size(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Poloha: ", style = MaterialTheme.typography.labelMedium)
-                    Text(locationName ?: "Žádná")
+                    Text(locationName ?: "Žádná", color = if (isFetchingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.weight(1f))
-                    if(locationName != null){
+                    if(locationName != null && !isFetchingLocation){
                         IconButton(onClick = { latitude = null; longitude = null; locationName = null }) { Icon(Icons.Default.Delete, contentDescription = null) }
                     }
-                    IconButton(onClick = { 
-                        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-                        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                                if (location != null) {
-                                    latitude = location.latitude
-                                    longitude = location.longitude
-                                    try {
-                                        val geocoder = Geocoder(context, Locale.getDefault())
-                                        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
-                                        locationName = addresses?.firstOrNull()?.locality ?: "Neznámé místo"
-                                    } catch (e: Exception) { locationName = "Neznámé místo" }
-                                }
+                    if (isFetchingLocation) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    } else {
+                        IconButton(onClick = { 
+                            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                                ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                                permissionLauncher.launch(arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                ))
+                            } else {
+                                fetchLocation()
                             }
-                        }
-                    }) { Icon(Icons.Default.LocationOn, contentDescription = null) }
+                        }) { Icon(Icons.Default.LocationOn, contentDescription = null) }
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(taskName, taskDescription, selectedPriority, selectedDate, latitude, longitude, locationName) }, enabled = isNameValid) {
+            TextButton(onClick = { onConfirm(taskName, taskDescription, selectedPriority, selectedDate, latitude, longitude, locationName) }, enabled = isNameValid && !isFetchingLocation) {
                 Text(if (task == null) "Přidat" else "Uložit")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Zrušit") } }
     )
 }
+
+private fun processLocation(location: android.location.Location, context: android.content.Context, onResult: (Double, Double, String) -> Unit) {
+    val lat = location.latitude
+    val lon = location.longitude
+    var name = "Neznámé místo"
+    try {
+        val geocoder = Geocoder(context, Locale.getDefault())
+        val addresses = geocoder.getFromLocation(lat, lon, 1)
+        val address = addresses?.firstOrNull()
+        if (address != null) {
+            name = address.locality ?: address.subAdminArea ?: address.featureName ?: "Souřadnice: ${String.format("%.4f", lat)}, ${String.format("%.4f", lon)}"
+        }
+    } catch (e: Exception) {
+        name = "Souřadnice: ${String.format("%.4f", lat)}, ${String.format("%.4f", lon)}"
+    }
+    onResult(lat, lon, name)
+}
+

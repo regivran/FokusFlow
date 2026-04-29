@@ -65,12 +65,6 @@ class MainActivity : ComponentActivity() {
                                 onClick = { currentView = "completed"; scope.launch { drawerState.close() } }
                             )
                             NavigationDrawerItem(
-                                icon = { Icon(Icons.Default.LocationOn, contentDescription = null) },
-                                label = { Text("Mapa") },
-                                selected = currentView == "map",
-                                onClick = { currentView = "map"; scope.launch { drawerState.close() } }
-                            )
-                            NavigationDrawerItem(
                                 icon = { Icon(Icons.Default.Delete, contentDescription = null) },
                                 label = { Text("Koš") },
                                 selected = currentView == "trash",
@@ -88,7 +82,6 @@ class MainActivity : ComponentActivity() {
                                         "home" -> "Moje úkoly"
                                         "completed" -> "Hotové úkoly"
                                         "trash" -> "Koš"
-                                        "map" -> "Mapa úkolů"
                                         else -> "FokusFlow"
                                     })
                                 },
@@ -126,10 +119,6 @@ class MainActivity : ComponentActivity() {
                                     viewModel = viewModel,
                                     tasks = deletedTasks,
                                     onDeletePermanently = { taskToDelete = it }
-                                )
-                                "map" -> MapScreen(
-                                    tasks = freeTasks + deadlineTasks,
-                                    onTaskClick = { taskToEdit = it }
                                 )
                             }
                         }
