@@ -2,29 +2,66 @@ package com.example.fokusflow
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.fokusflow.network.Quote
+import com.example.fokusflow.network.QuoteApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 class TaskViewModel(private val taskDao: TaskDao) : ViewModel() {
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery
+
+    private val _quote = MutableStateFlow<Quote?>(null)
+    val quote: StateFlow<Quote?> = _quote
+
     init {
         purgeOldTasks()
+        fetchQuote()
+    }
+
+    private fun fetchQuote() {
+        viewModelScope.launch {
+            try {
+                val quotes = QuoteApi.create().getRandomQuote()
+                _quote.value = quotes.firstOrNull()
+            } catch (e: Exception) {
+                // V případě chyby (např. bez internetu) zůstane null
+            }
+        }
+    }
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
     }
 
     val freeTasks: StateFlow<List<Task>> = taskDao.getFreeTasks()
+        .combine(_searchQuery) { tasks, query ->
+            if (query.isBlank()) tasks else tasks.filter { it.name.contains(query, ignoreCase = true) || it.description?.contains(query, ignoreCase = true) == true }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val deadlineTasks: StateFlow<List<Task>> = taskDao.getDeadlineTasks()
+        .combine(_searchQuery) { tasks, query ->
+            if (query.isBlank()) tasks else tasks.filter { it.name.contains(query, ignoreCase = true) || it.description?.contains(query, ignoreCase = true) == true }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val completedTasks: StateFlow<List<Task>> = taskDao.getCompletedTasks()
+        .combine(_searchQuery) { tasks, query ->
+            if (query.isBlank()) tasks else tasks.filter { it.name.contains(query, ignoreCase = true) || it.description?.contains(query, ignoreCase = true) == true }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val deletedTasks: StateFlow<List<Task>> = taskDao.getDeletedTasks()
+        .combine(_searchQuery) { tasks, query ->
+            if (query.isBlank()) tasks else tasks.filter { it.name.contains(query, ignoreCase = true) || it.description?.contains(query, ignoreCase = true) == true }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun moveToTrash(task: Task) {
