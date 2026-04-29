@@ -87,6 +87,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.runtime.mutableIntStateOf
+import android.location.Geocoder
+import com.google.android.gms.location.LocationServices
+import java.util.Locale
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.app.ActivityCompat
+import android.content.Context
 
 // Importy pro Mapy
 import com.google.android.gms.maps.model.CameraPosition
@@ -270,16 +277,16 @@ class MainActivity : ComponentActivity() {
                         if (showAddTaskDialog || taskToEdit != null) {
                             TaskDialog(
                                 task = taskToEdit,
-                                onConfirm = { name, description, priority, dueDate, latitude, longitude ->
+                                onConfirm = { name, description, priority, dueDate, latitude, longitude, locationName ->
                                     if (taskToEdit != null) {
                                         viewModel.updateTask(
                                             taskToEdit!!.id, name, description, priority, dueDate,
                                             taskToEdit!!.isCompleted, taskToEdit!!.isDeleted, taskToEdit!!.deletedAt,
-                                            latitude, longitude
+                                            latitude, longitude, locationName
                                         )
                                         taskToEdit = null
                                     } else {
-                                        viewModel.addTask(name, description, priority, dueDate, latitude, longitude)
+                                        viewModel.addTask(name, description, priority, dueDate, latitude, longitude, locationName)
                                         showAddTaskDialog = false
                                     }
                                 },
@@ -319,18 +326,19 @@ fun DeleteConfirmationDialog(task: Task, onConfirm: (Task) -> Unit, onDismiss: (
 @Composable
 fun TaskDialog(
     task: Task? = null,
-    onConfirm: (String, String, Priority, LocalDate?, Double?, Double?) -> Unit,
+    onConfirm: (String, String, Priority, LocalDate?, Double?, Double?, String?) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     var taskName by remember { mutableStateOf(task?.name ?: "") }
     var taskDescription by remember { mutableStateOf(task?.description ?: "") }
     var selectedPriority by remember { mutableStateOf(task?.priority ?: Priority.Medium) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(task?.dueDate) }
     var latitude by remember { mutableStateOf(task?.latitude) }
     var longitude by remember { mutableStateOf(task?.longitude) }
+    var locationName by remember { mutableStateOf(task?.locationName) }
     
     var showDatePicker by remember { mutableStateOf(false) }
-    var showLocationPicker by remember { mutableStateOf(false) }
     val isNameValid = taskName.isNotBlank()
 
     if (showDatePicker) {
@@ -359,18 +367,6 @@ fun TaskDialog(
         ) {
             DatePicker(state = datePickerState)
         }
-    }
-
-    if (showLocationPicker) {
-        LocationPickerDialog(
-            initialLocation = if (latitude != null && longitude != null) LatLng(latitude!!, longitude!!) else null,
-            onLocationSelected = { latLng ->
-                latitude = latLng.latitude
-                longitude = latLng.longitude
-                showLocationPicker = false
-            },
-            onDismiss = { showLocationPicker = false }
-        )
     }
 
     AlertDialog(
@@ -424,25 +420,44 @@ fun TaskDialog(
                 Spacer(modifier = Modifier.size(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Poloha: ", style = MaterialTheme.typography.labelMedium)
-                    Text(if (latitude != null) "Nastavena" else "Žádná")
+                    Text(locationName ?: "Žádná")
                     Spacer(modifier = Modifier.weight(1f))
-                    if(latitude != null){
+                    if(locationName != null){
                         IconButton(onClick = { 
                             latitude = null
                             longitude = null
+                            locationName = null
                         }) {
                            Icon(Icons.Default.Delete, contentDescription = "Smazat polohu")
                         }
                     }
-                    IconButton(onClick = { showLocationPicker = true }) {
-                        Icon(Icons.Default.LocationOn, contentDescription = "Vybrat polohu")
+                    IconButton(onClick = { 
+                        // Získání aktuální polohy
+                        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+                        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                                if (location != null) {
+                                    latitude = location.latitude
+                                    longitude = location.longitude
+                                    try {
+                                        val geocoder = Geocoder(context, Locale.getDefault())
+                                        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                                        locationName = addresses?.firstOrNull()?.locality ?: "Neznámé místo"
+                                    } catch (e: Exception) {
+                                        locationName = "Neznámé místo"
+                                    }
+                                }
+                            }
+                        }
+                    }) {
+                        Icon(Icons.Default.LocationOn, contentDescription = "Získat polohu")
                     }
                 }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(taskName, taskDescription, selectedPriority, selectedDate, latitude, longitude) },
+                onClick = { onConfirm(taskName, taskDescription, selectedPriority, selectedDate, latitude, longitude, locationName) },
                 enabled = isNameValid
             ) {
                 Text(if (task == null) "Přidat" else "Uložit")
@@ -554,7 +569,25 @@ fun TaskItem(
                     }
                 }
                 // Zobrazení polohy, pokud existuje
-                if (task.latitude != null && task.longitude != null) {
+                if (!task.locationName.isNullOrEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = task.locationName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray
+                        )
+                    }
+                } else if (task.latitude != null && task.longitude != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 4.dp)

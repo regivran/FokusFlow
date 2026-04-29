@@ -52,7 +52,7 @@ class TaskViewModel(private val taskDao: TaskDao) : ViewModel() {
         }
     }
 
-    fun addTask(name: String, description: String?, priority: Priority, dueDate: LocalDate?, latitude: Double? = null, longitude: Double? = null) {
+    fun addTask(name: String, description: String?, priority: Priority, dueDate: LocalDate?, latitude: Double? = null, longitude: Double? = null, locationName: String? = null) {
         viewModelScope.launch {
             val newTask = Task(
                 name = name,
@@ -60,13 +60,14 @@ class TaskViewModel(private val taskDao: TaskDao) : ViewModel() {
                 priority = priority,
                 dueDate = dueDate,
                 latitude = latitude,
-                longitude = longitude
+                longitude = longitude,
+                locationName = locationName
             )
             taskDao.insertTask(newTask)
         }
     }
 
-    fun updateTask(id: Int, name: String, description: String?, priority: Priority, dueDate: LocalDate?, isCompleted: Boolean, isDeleted: Boolean, deletedAt: LocalDate?, latitude: Double? = null, longitude: Double? = null) {
+    fun updateTask(id: Int, name: String, description: String?, priority: Priority, dueDate: LocalDate?, isCompleted: Boolean, isDeleted: Boolean, deletedAt: LocalDate?, latitude: Double? = null, longitude: Double? = null, locationName: String? = null) {
         viewModelScope.launch {
             val updatedTask = Task(
                 id = id,
@@ -78,7 +79,8 @@ class TaskViewModel(private val taskDao: TaskDao) : ViewModel() {
                 isDeleted = isDeleted,
                 deletedAt = deletedAt,
                 latitude = latitude,
-                longitude = longitude
+                longitude = longitude,
+                locationName = locationName
             )
             taskDao.updateTask(updatedTask)
         }
