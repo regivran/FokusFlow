@@ -23,6 +23,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.example.fokusflow.Priority
 import com.example.fokusflow.Task
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY
 import android.Manifest
 import android.content.pm.PackageManager
 import android.location.Geocoder
@@ -185,53 +186,43 @@ fun TaskDialog(
 
     val fetchLocation = {
         isFetchingLocation = true
-        locationName = "Zjišťuji polohu..."
+        locationName = "Čekám na GPS signál..."
         val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
         
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            
-            // Zkusíme nejdřív poslední známou polohu (je to nejrychlejší)
-            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                if (location != null) {
-                    processLocation(location, context) { lat, lon, name ->
-                        latitude = lat
-                        longitude = lon
-                        locationName = name
-                        isFetchingLocation = false
-                    }
-                } else {
-                    // Pokud lastLocation selže, vyžádáme si čerstvou polohu
-                    val priority = com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY
-                    fusedLocationClient.getCurrentLocation(priority, null).addOnSuccessListener { freshLocation ->
-                        if (freshLocation != null) {
-                            processLocation(freshLocation, context) { lat, lon, name ->
-                                latitude = lat
-                                longitude = lon
-                                locationName = name
-                                isFetchingLocation = false
-                            }
-                        } else {
-                            locationName = "Poloha nenalezena"
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            // Vynutíme nejvyšší možnou přesnost a budeme čekat na čerstvý výsledek
+            fusedLocationClient.getCurrentLocation(PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener { freshLocation ->
+                    // Filtrujeme nepřesné výsledky (typicky ty Semily ze sítě mají přesnost v kilometrech)
+                    if (freshLocation != null && freshLocation.accuracy < 200) {
+                        processLocation(freshLocation, context) { lat, lon, name ->
+                            latitude = lat
+                            longitude = lon
+                            locationName = name
                             isFetchingLocation = false
                         }
-                    }.addOnFailureListener {
-                        locationName = "Chyba zjišťování"
+                    } else if (freshLocation != null) {
+                        locationName = "Nízká přesnost (${freshLocation.accuracy.toInt()}m)"
+                        isFetchingLocation = false
+                    } else {
+                        locationName = "Slabý GPS signál"
                         isFetchingLocation = false
                     }
                 }
-            }
+                .addOnFailureListener {
+                    locationName = "Chyba GPS senzoru"
+                    isFetchingLocation = false
+                }
         } else {
             isFetchingLocation = false
-            locationName = "Chybí oprávnění"
+            locationName = "Chybí oprávnění GPS"
         }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
             fetchLocation()
         }
     }
@@ -282,21 +273,22 @@ fun TaskDialog(
                 Spacer(modifier = Modifier.size(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Poloha: ", style = MaterialTheme.typography.labelMedium)
-                    Text(locationName ?: "Žádná", color = if (isFetchingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = locationName ?: "Žádná", 
+                        color = if (isFetchingLocation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     if(locationName != null && !isFetchingLocation){
-                        IconButton(onClick = { latitude = null; longitude = null; locationName = null }) { Icon(Icons.Default.Delete, contentDescription = null) }
+                        IconButton(onClick = { latitude = null; longitude = null; locationName = null }) { Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp)) }
                     }
                     if (isFetchingLocation) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
                         IconButton(onClick = { 
-                            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-                                ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                                permissionLauncher.launch(arrayOf(
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION
-                                ))
+                            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                                permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                             } else {
                                 fetchLocation()
                             }
@@ -317,17 +309,33 @@ fun TaskDialog(
 private fun processLocation(location: android.location.Location, context: android.content.Context, onResult: (Double, Double, String) -> Unit) {
     val lat = location.latitude
     val lon = location.longitude
-    var name = "Neznámé místo"
+    var name = "Souřadnice: ${String.format("%.4f", lat)}, ${String.format("%.4f", lon)}"
     try {
         val geocoder = Geocoder(context, Locale.getDefault())
-        val addresses = geocoder.getFromLocation(lat, lon, 1)
-        val address = addresses?.firstOrNull()
-        if (address != null) {
-            name = address.locality ?: address.subAdminArea ?: address.featureName ?: "Souřadnice: ${String.format("%.4f", lat)}, ${String.format("%.4f", lon)}"
+        val addresses = geocoder.getFromLocation(lat, lon, 5)
+        
+        if (!addresses.isNullOrEmpty()) {
+            // Prioritně hledáme nejpřesnější název (locality nesmí být okresní město pokud jsme jinde)
+            for (addr in addresses) {
+                val locality = addr.locality
+                val subLocality = addr.subLocality
+                val subAdmin = addr.subAdminArea
+                
+                // Pokud locality není null a není to jen název okresu, použijeme ji
+                if (locality != null && locality != subAdmin) {
+                    name = locality
+                    break
+                } else if (subLocality != null) {
+                    name = subLocality
+                    break
+                } else if (locality != null) {
+                    name = locality
+                    break
+                }
+            }
         }
     } catch (e: Exception) {
-        name = "Souřadnice: ${String.format("%.4f", lat)}, ${String.format("%.4f", lon)}"
+        // Ponecháme souřadnice
     }
     onResult(lat, lon, name)
 }
-
